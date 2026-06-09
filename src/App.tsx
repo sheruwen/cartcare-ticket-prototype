@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { agents, cases as initialCases, techTickets as initialTechTickets, timelineEvents, transactions } from "./mockData";
 import type { CaseStatus, CaseType, CartPointsTransaction, Priority, SupportCase, TechTicket, TimelineEvent } from "./types";
 
@@ -980,6 +980,7 @@ type DiscussionItem = {
 
 function buildConversationItems(item: SupportCase, projectArea: ProjectArea, locale: Locale, events: TimelineEvent[], defaultReply: string): DiscussionItem[] {
   const shown = displayCase(item, projectArea);
+  const publicReplyEvents = events.filter((event) => ["回覆顧客", "公開回覆"].includes(event.type));
   const items: DiscussionItem[] = [
     {
       id: `${item.id}-customer-message`,
@@ -989,15 +990,15 @@ function buildConversationItems(item: SupportCase, projectArea: ProjectArea, loc
       kind: "customer",
       content: getCustomerMessage(item, projectArea),
     },
-    {
+    ...(publicReplyEvents.length === 0 ? [{
       id: `${item.id}-default-reply`,
       time: item.updatedAt,
       actor: getDisplayAssigneeName(item.assignee, projectArea),
       label: locale === "en" ? "Public reply" : "公開回覆",
-      kind: "reply",
+      kind: "reply" as const,
       content: defaultReply,
-    },
-    ...events.filter((event) => ["回覆顧客", "公開回覆"].includes(event.type)).map((event) => ({
+    }] : []),
+    ...publicReplyEvents.map((event) => ({
       id: event.id,
       time: event.time,
       actor: getDisplayAssigneeName(event.actor, projectArea),
@@ -1532,6 +1533,7 @@ function CaseDetail(props: {
   const [recordTab, setRecordTab] = useState<"comments" | "history">("comments");
   const [techTicketQuery, setTechTicketQuery] = useState("");
   const [openProperty, setOpenProperty] = useState<string | null>(null);
+  const lastSubmittedReplyRef = useRef<string | null>(null);
   const relatedTickets = techTickets.filter((ticket) => supportCase.relatedTechTicketIds.includes(ticket.id));
   const historyCases = sortHistoryCases(cases.filter((item) => supportCase.historyCaseIds.includes(item.id)), supportCase).slice(0, 3);
   const sla = getSlaMeta(supportCase);
@@ -1560,6 +1562,10 @@ function CaseDetail(props: {
   const conversationItems = buildConversationItems(supportCase, projectArea, locale, events, lastAgentReply);
   const internalNoteItems = buildInternalNoteItems(events, projectArea, locale);
   const activityEvents = getActivityEvents(events);
+  const commentEntries = [
+    ...internalNoteItems.map((item) => ({ kind: "comment" as const, time: item.time, item })),
+    ...relatedTickets.map((ticket) => ({ kind: "externalTicket" as const, time: getExternalTicketSyncedAt(ticket), ticket })),
+  ].sort((a, b) => a.time.localeCompare(b.time));
   const subtypeOptions = subtypeOptionsByType[supportCase.type] ?? [supportCase.subtype];
   const editableAgentOptions = ["未指派", ...agents.map((agent) => agent.name)];
   const collaboratorOptions = agents
@@ -1570,6 +1576,18 @@ function CaseDetail(props: {
     if (patch) updateCase(supportCase.id, patch);
     addEvent(supportCase.id, type, description, currentUser.name);
     notify(description);
+  };
+  const submitPublicReply = () => {
+    const fallback = locale === "en" ? "Customer was replied to and ticket record was updated." : "已回覆顧客並更新案件紀錄。";
+    const finalReply = replyText.trim() || fallback;
+    const signature = `${supportCase.id}:${finalReply}`;
+    if (lastSubmittedReplyRef.current === signature) return;
+    lastSubmittedReplyRef.current = signature;
+    runAction("公開回覆", finalReply, { status: "待顧客回覆" });
+    setReplyText("");
+    window.setTimeout(() => {
+      if (lastSubmittedReplyRef.current === signature) lastSubmittedReplyRef.current = null;
+    }, 700);
   };
   const linkExternalTicket = (ticket: TechTicket) => {
     updateCase(supportCase.id, {
@@ -1883,10 +1901,10 @@ function CaseDetail(props: {
                     <h3>{text.detail.replyCustomer}</h3>
                   </div>
                   <div className="template-row" aria-label={text.detail.quickReplies}>
-                    <button className="text-button" onClick={() => setReplyText(locale === "en" ? "Hi, we have received your request and are checking the latest status." : "您好，我們已收到您的問題，正在協助確認處理進度。")}>{text.detail.received}</button>
-                    <button className="text-button" onClick={() => setReplyText(locale === "en" ? "Could you please provide a screenshot, transaction time, or order details so we can check further?" : "請您補充相關截圖、交易時間或訂單資訊，以利我們進一步確認。")}>{text.detail.needInfo}</button>
-                    <button className="text-button" onClick={() => setReplyText(locale === "en" ? "The transaction is still processing. We will continue tracking it and update you once there is progress." : "您好，目前交易仍在處理中，我們會持續追蹤狀態並回覆您最新進度。")}>{text.detail.processing}</button>
-                    <button className="text-button" onClick={() => setReplyText(locale === "en" ? "This issue has been resolved. Please reply if you still need help." : "此案件已處理完成，如仍有問題請再回覆我們。")}>{text.detail.completed}</button>
+                    <button type="button" className="text-button" onClick={() => setReplyText(locale === "en" ? "Hi, we have received your request and are checking the latest status." : "您好，我們已收到您的問題，正在協助確認處理進度。")}>{text.detail.received}</button>
+                    <button type="button" className="text-button" onClick={() => setReplyText(locale === "en" ? "Could you please provide a screenshot, transaction time, or order details so we can check further?" : "請您補充相關截圖、交易時間或訂單資訊，以利我們進一步確認。")}>{text.detail.needInfo}</button>
+                    <button type="button" className="text-button" onClick={() => setReplyText(locale === "en" ? "The transaction is still processing. We will continue tracking it and update you once there is progress." : "您好，目前交易仍在處理中，我們會持續追蹤狀態並回覆您最新進度。")}>{text.detail.processing}</button>
+                    <button type="button" className="text-button" onClick={() => setReplyText(locale === "en" ? "This issue has been resolved. Please reply if you still need help." : "此案件已處理完成，如仍有問題請再回覆我們。")}>{text.detail.completed}</button>
                   </div>
                   <textarea
                     value={replyText}
@@ -1896,10 +1914,8 @@ function CaseDetail(props: {
                   <div className="composer-footer">
                     <span className="muted">{text.detail.publicReplyNotice}</span>
                     <button
-                      onClick={() => {
-                        runAction("公開回覆", replyText.trim() || "已回覆顧客並更新案件紀錄。", { status: "待顧客回覆" });
-                        setReplyText("");
-                      }}
+                      type="button"
+                      onClick={submitPublicReply}
                     >
                       {text.detail.sendPublicReply}
                     </button>
@@ -1928,34 +1944,35 @@ function CaseDetail(props: {
                     </div>
                   </div>
                   <div className="discussion-list">
-                    {internalNoteItems.length === 0 && relatedTickets.length === 0 ? <p className="muted">{text.detail.noComments}</p> : internalNoteItems.map((item) => (
-                      <div className="comment-row" key={item.id}>
-                        <span className="comment-avatar">{item.actor.slice(0, 1)}</span>
-                        <div className="comment-content">
-                          <div className="comment-meta">
-                            <strong>{item.actor}</strong>
-                            <small>{item.time}</small>
+                    {commentEntries.length === 0 ? <p className="muted">{text.detail.noComments}</p> : commentEntries.map((entry) => (
+                      entry.kind === "comment" ? (
+                        <div className="comment-row" key={entry.item.id}>
+                          <span className="comment-avatar">{entry.item.actor.slice(0, 1)}</span>
+                          <div className="comment-content">
+                            <div className="comment-meta">
+                              <strong>{entry.item.actor}</strong>
+                              <small>{entry.item.time}</small>
+                            </div>
+                            <p>{entry.item.content}</p>
                           </div>
-                          <p>{item.content}</p>
                         </div>
-                      </div>
-                    ))}
-                    {relatedTickets.map((ticket) => (
-                      <div className="comment-row" key={ticket.id}>
-                        <span className="comment-avatar">張</span>
-                        <div className="comment-content">
-                          <div className="comment-meta">
-                            <strong>{locale === "en" ? "External ticket update" : "技術工單更新"}</strong>
-                            <small>{getExternalTicketSyncedAt(ticket)}</small>
+                      ) : (
+                        <div className="comment-row" key={entry.ticket.id}>
+                          <span className="comment-avatar">張</span>
+                          <div className="comment-content">
+                            <div className="comment-meta">
+                              <strong>{locale === "en" ? "External ticket update" : "技術工單更新"}</strong>
+                              <small>{getExternalTicketSyncedAt(entry.ticket)}</small>
+                            </div>
+                            <div className="external-ticket-update">
+                              <strong>{entry.ticket.id}</strong>
+                              <span>{locale === "en" ? "Status" : "狀態"}：{getExternalTicketPreviousStatus(entry.ticket)} → {getExternalTicketStatus(entry.ticket)}</span>
+                              <span>{locale === "en" ? "Update" : "更新摘要"}：{getExternalTicketUpdateSummary(entry.ticket, locale)}</span>
+                            </div>
+                            <button className="text-button comment-link" onClick={() => notify(locale === "en" ? `Viewing external ticket ${entry.ticket.id}` : `查看外部工單 ${entry.ticket.id}`)}>{text.detail.viewExternalTicket}</button>
                           </div>
-                          <div className="external-ticket-update">
-                            <strong>{ticket.id}</strong>
-                            <span>{locale === "en" ? "Status" : "狀態"}：{getExternalTicketPreviousStatus(ticket)} → {getExternalTicketStatus(ticket)}</span>
-                            <span>{locale === "en" ? "Update" : "更新摘要"}：{getExternalTicketUpdateSummary(ticket, locale)}</span>
-                          </div>
-                          <button className="text-button comment-link" onClick={() => notify(locale === "en" ? `Viewing external ticket ${ticket.id}` : `查看外部工單 ${ticket.id}`)}>{text.detail.viewExternalTicket}</button>
                         </div>
-                      </div>
+                      )
                     ))}
                   </div>
                   <div className={currentUser.role === "二線客服" ? "composer-panel note-composer primary-composer" : "composer-panel note-composer"}>
