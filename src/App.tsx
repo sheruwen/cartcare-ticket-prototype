@@ -854,7 +854,7 @@ function getPermissionModel(item: SupportCase, user: UserProfile, selectedTx: Ca
     canViewAllCases: isSupervisor,
     canViewAdvancedCartPoints: isSecondLine || isSupervisor,
     canComment: canWork && (isOwner || isCollaborator || isSupervisor),
-    canReplyCustomer: canWork && isOwner && !isSupervisor,
+    canReplyCustomer: canWork && (isOwner || isSupervisor),
     canUpdateCaseStatus: canWork && isOwner && !isSupervisor,
     canResolveCase: canWork && isOwner && !isSupervisor,
     canCloseCase: item.status === "已解決" && isOwner && !isSupervisor,
@@ -1702,21 +1702,12 @@ function CaseDetail(props: {
           {permissions.canTakeOwnership && (
             <button onClick={() => runAction("接案", locale === "en" ? `${currentUser.name} accepted ticket ownership.` : `${currentUser.name} 已成為案件 Owner。`, { status: "處理中", assignee: currentUser.name })}>{locale === "en" ? "Take ownership" : "接手案件"}</button>
           )}
-          {permissions.canUpdateCaseStatus && supportCase.status === "處理中" && (
+          {permissions.canResolveCase && (currentUser.role === "二線客服" || ["處理中", "待顧客回覆"].includes(supportCase.status)) && (
             <>
               <button onClick={() => runAction("狀態更新", locale === "en" ? "Issue was resolved and marked as resolved." : "問題已處理完成，標記為已解決。", { status: "已解決" })}>{locale === "en" ? "Mark resolved" : "標記已解決"}</button>
-            </>
-          )}
-          {permissions.canUpdateCaseStatus && supportCase.status === "待顧客回覆" && (
-            <>
-              <button onClick={() => runAction("狀態更新", locale === "en" ? "Customer replied. Ticket moved back to in progress." : "收到顧客回覆，案件回到處理中。", { status: "處理中" })}>{locale === "en" ? "Customer replied" : "收到顧客回覆"}</button>
-              <button onClick={() => runAction("狀態更新", locale === "en" ? "Ticket was canceled." : "案件已取消。", { status: "已取消" })}>{locale === "en" ? "Cancel ticket" : "取消案件"}</button>
-            </>
-          )}
-          {permissions.canUpdateCaseStatus && currentUser.role === "二線客服" && (
-            <>
-              <button onClick={() => runAction("二線分析完成", locale === "en" ? "Second-line support completed analysis and updated Comments." : "二線客服已完成分析並更新 Comments。")}>{locale === "en" ? "Mark analysis done" : "標記分析完成"}</button>
-              {["待二線客服處理", "處理中"].includes(supportCase.status) && <button onClick={() => runAction("狀態更新", locale === "en" ? "Second-line marked this ticket as needing engineering support." : "二線標記此案件需技術支援。", { status: "待技術支援" })}>{locale === "en" ? "Need engineering" : "需技術支援"}</button>}
+              {(supportCase.status === "處理中" || (currentUser.role === "一線客服" && supportCase.status === "待顧客回覆")) && (
+                <button onClick={() => runAction("狀態更新", locale === "en" ? "Ticket was canceled." : "案件已取消。", { status: "已取消" })}>{locale === "en" ? "Cancel ticket" : "取消案件"}</button>
+              )}
             </>
           )}
           {permissions.canAssignCase && (
