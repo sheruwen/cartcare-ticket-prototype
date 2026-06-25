@@ -8,6 +8,7 @@ export type CaseStatus =
   | "技術排查中"
   | "已解決"
   | "已結案"
+  | "已關閉"
   | "已取消";
 
 export type CaseType =

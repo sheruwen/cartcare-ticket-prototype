@@ -9,7 +9,15 @@ type UserProfile = { id: string; name: string; role: AppRole };
 type ProjectArea = "tw" | "sea";
 type Locale = "zh" | "en";
 
-const statuses: CaseStatus[] = ["新建立", "待受理", "處理中", "待顧客回覆", "待二線客服處理", "待技術支援", "技術排查中", "已解決", "已結案", "已取消"];
+const statuses: CaseStatus[] = ["新建立", "待受理", "處理中", "待顧客回覆", "待二線客服處理", "待技術支援", "技術排查中", "已解決", "已結案", "已關閉", "已取消"];
+const closeReasons = [
+  { zh: "顧客取消需求", en: "Customer canceled the request" },
+  { zh: "重複案件", en: "Duplicate ticket" },
+  { zh: "建立錯誤", en: "Created by mistake" },
+  { zh: "顧客未回覆", en: "Customer did not respond" },
+  { zh: "非客服處理範圍", en: "Outside support scope" },
+  { zh: "其他", en: "Other" },
+];
 const caseTypes: CaseType[] = ["帳號問題", "訂單問題", "退款問題", "CartPoints 點數問題", "系統問題", "其他"];
 const priorities: Priority[] = ["低", "中", "高", "緊急"];
 const subtypeOptionsByType: Record<CaseType, string[]> = {
@@ -36,12 +44,13 @@ const statusDescriptions: Record<CaseStatus, string> = {
   技術排查中: "技術團隊正在排查",
   已解決: "問題已處理完成，等待確認或自動結案",
   已結案: "案件已完成並封存",
+  已關閉: "案件已停止處理，並已記錄關閉原因",
   已取消: "誤開案件或重複案件",
 };
 const statusGroups: Array<{ label: string; options: CaseStatus[] }> = [
   { label: "接案流程", options: ["新建立", "待受理", "處理中", "待顧客回覆"] },
   { label: "協作流程", options: ["待二線客服處理", "待技術支援", "技術排查中"] },
-  { label: "完成流程", options: ["已解決", "已結案", "已取消"] },
+  { label: "完成流程", options: ["已解決", "已結案", "已關閉", "已取消"] },
 ];
 const i18n = {
   zh: {
@@ -234,6 +243,7 @@ const statusLabelsEn: Record<CaseStatus, string> = {
   技術排查中: "Engineering investigation",
   已解決: "Resolved",
   已結案: "Closed",
+  已關閉: "Closed",
   已取消: "Canceled",
 };
 
@@ -601,6 +611,7 @@ function getProcessStage(item: SupportCase) {
   if (item.status === "待二線客服處理") return { label: "二線客服", tone: "blue" };
   if (item.status === "待技術支援" || item.status === "技術排查中") return { label: "技術排查", tone: "blue" };
   if (item.status === "已解決" || item.status === "已結案") return { label: "已解決", tone: "green" };
+  if (item.status === "已關閉" || item.status === "已取消") return { label: "已關閉", tone: "gray" };
   return { label: "一線客服", tone: "gray" };
 }
 
@@ -654,6 +665,7 @@ function getWorkStage(item: SupportCase) {
   if (item.status === "待技術支援" || item.status === "技術排查中") return "跨部門協作中";
   if (item.status === "待顧客回覆") return "等待顧客";
   if (item.status === "已解決" || item.status === "已結案") return "收尾階段";
+  if (item.status === "已關閉" || item.status === "已取消") return "已停止處理";
   return "客服處理中";
 }
 
@@ -798,7 +810,7 @@ function tCommentLabel(label: string, locale: Locale) {
 }
 
 function isOpenCase(item: SupportCase) {
-  return !["已解決", "已結案", "已取消"].includes(item.status);
+  return !["已解決", "已結案", "已關閉", "已取消"].includes(item.status);
 }
 
 function hasHighPriority(item: SupportCase) {
@@ -835,7 +847,7 @@ function getRoleQueueGroups(role: AppRole) {
 }
 
 function isTerminalCase(item: SupportCase) {
-  return ["已解決", "已結案", "已取消"].includes(item.status);
+  return ["已解決", "已結案", "已關閉", "已取消"].includes(item.status);
 }
 
 function getPermissionModel(item: SupportCase, user: UserProfile, selectedTx: CartPointsTransaction | null, events: TimelineEvent[]) {
@@ -1533,6 +1545,7 @@ function CaseDetail(props: {
   const [recordTab, setRecordTab] = useState<"comments" | "history">("comments");
   const [techTicketQuery, setTechTicketQuery] = useState("");
   const [openProperty, setOpenProperty] = useState<string | null>(null);
+  const [closeMenuOpen, setCloseMenuOpen] = useState(false);
   const lastSubmittedReplyRef = useRef<string | null>(null);
   const relatedTickets = techTickets.filter((ticket) => supportCase.relatedTechTicketIds.includes(ticket.id));
   const historyCases = sortHistoryCases(cases.filter((item) => supportCase.historyCaseIds.includes(item.id)), supportCase).slice(0, 3);
@@ -1576,6 +1589,13 @@ function CaseDetail(props: {
     if (patch) updateCase(supportCase.id, patch);
     addEvent(supportCase.id, type, description, currentUser.name);
     notify(description);
+  };
+  const closeCaseWithReason = (reason: (typeof closeReasons)[number]) => {
+    const description = locale === "en"
+      ? `Ticket was closed. Reason: ${reason.en}.`
+      : `案件已關閉。原因：${reason.zh}。`;
+    runAction("關閉案件", description, { status: "已關閉" });
+    setCloseMenuOpen(false);
   };
   const submitPublicReply = () => {
     const fallback = locale === "en" ? "Customer was replied to and ticket record was updated." : "已回覆顧客並更新案件紀錄。";
@@ -1706,7 +1726,25 @@ function CaseDetail(props: {
             <>
               <button onClick={() => runAction("狀態更新", locale === "en" ? "Issue was resolved and marked as resolved." : "問題已處理完成，標記為已解決。", { status: "已解決" })}>{locale === "en" ? "Mark resolved" : "標記已解決"}</button>
               {(supportCase.status === "處理中" || (currentUser.role === "一線客服" && supportCase.status === "待顧客回覆")) && (
-                <button onClick={() => runAction("狀態更新", locale === "en" ? "Ticket was canceled." : "案件已取消。", { status: "已取消" })}>{locale === "en" ? "Cancel ticket" : "取消案件"}</button>
+                <div className="case-action-menu">
+                  <button
+                    aria-expanded={closeMenuOpen}
+                    aria-haspopup="menu"
+                    onClick={() => setCloseMenuOpen((open) => !open)}
+                  >
+                    {locale === "en" ? "Close ticket" : "關閉案件"}
+                  </button>
+                  {closeMenuOpen && (
+                    <div className="case-close-reason-menu" role="menu">
+                      <span>{locale === "en" ? "Select close reason" : "選擇關閉原因"}</span>
+                      {closeReasons.map((reason) => (
+                        <button key={reason.zh} role="menuitem" onClick={() => closeCaseWithReason(reason)}>
+                          {locale === "en" ? reason.en : reason.zh}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -3003,30 +3041,63 @@ function getOwnershipFlowSteps(item: SupportCase, events: TimelineEvent[], relat
   const ownerRole = getAssigneeRole(item.assignee);
   const frontlineActor = events.find((event) => getAssigneeRole(event.actor) === "一線客服")?.actor ?? (ownerRole === "一線客服" ? item.assignee : "一線客服");
   const secondLineActor = events.find((event) => getAssigneeRole(event.actor) === "二線客服")?.actor ?? (ownerRole === "二線客服" ? item.assignee : "");
+  const resolvedEvent = events.find((event) => event.description.includes("已解決") || event.description.includes("marked as resolved"));
+  const closedEvent = events.find((event) => event.type === "結案" || event.type === "關閉案件" || event.description.includes("已關閉"));
   const frontlineLabel = frontlineActor === "一線客服" ? getDisplayRoleLabel("一線客服", projectArea) : getDisplayAssigneeName(frontlineActor, projectArea);
   const secondLineLabel = secondLineActor ? getDisplayAssigneeName(secondLineActor, projectArea) : "";
   const currentOwnerLabel = getDisplayAssigneeName(item.assignee, projectArea);
   const frontlineRoleLabel = getLocalizedRoleLabel("一線客服", locale, projectArea);
   const secondLineRoleLabel = getLocalizedRoleLabel("二線客服", locale, projectArea);
-  const hasSecondLine = ["待二線客服處理", "待技術支援", "技術排查中", "已解決", "已結案"].includes(item.status) || ownerRole === "二線客服";
+  const hasSecondLine = ["待二線客服處理", "待技術支援", "技術排查中"].includes(item.status) ||
+    ownerRole === "二線客服" ||
+    events.some((event) => ["升級至二線客服", "二線處理結果", "二線分析完成"].includes(event.type));
   const hasTech = relatedTickets.length > 0 || ["待技術支援", "技術排查中"].includes(item.status);
   const isResolved = ["已解決", "已結案"].includes(item.status);
-  const isClosed = item.status === "已結案";
-  const currentIndex = item.status === "已結案" ? 5 :
-    item.status === "已解決" ? 4 :
-    hasTech ? 3 :
-    hasSecondLine ? 2 :
-    ["處理中", "待顧客回覆"].includes(item.status) ? 1 :
-    0;
+  const isClosed = ["已結案", "已關閉", "已取消"].includes(item.status);
+  const resolvedActor = resolvedEvent?.actor ?? item.assignee;
+  const closedActor = closedEvent?.actor ?? item.assignee;
+  const resolvedActorLabel = getDisplayAssigneeName(resolvedActor, projectArea);
+  const closedActorLabel = getDisplayAssigneeName(closedActor, projectArea);
+  const resolvedLabel = hasSecondLine
+    ? tStatus("已解決", locale)
+    : locale === "en" ? "Resolved by frontline" : "一線解決";
+  const closedLabel = item.status === "已關閉" || item.status === "已取消"
+    ? tStatus("已關閉", locale)
+    : tStatus("已結案", locale);
 
-  const rows = [
+  const rows: Array<{ kind: string; label: string; meta: string }> = [
     { kind: "created", label: tStatus("新建立", locale), meta: locale === "en" ? `System created ticket · ${item.createdAt}` : `系統建立案件 · ${item.createdAt}` },
     { kind: "frontline", label: item.status === "待顧客回覆" ? tStatus("待顧客回覆", locale) : tStatus("處理中", locale), meta: `${frontlineLabel} (${frontlineRoleLabel})` },
-    { kind: "second-line", label: locale === "en" ? "Second-line transfer" : "升級二線", meta: secondLineActor ? `${frontlineLabel} → ${secondLineLabel}` : `${frontlineLabel} → ${locale === "en" ? "Second-line queue" : projectArea === "sea" ? "Second-line Queue" : "二線待處理 Queue"}` },
-    { kind: "engineering", label: item.status === "技術排查中" ? tStatus("技術排查中", locale) : tStatus("待技術支援", locale), meta: secondLineActor ? `${secondLineLabel} (${secondLineRoleLabel})${relatedTickets[0] ? ` · ${locale === "en" ? "Linked" : "已關聯"} ${relatedTickets[0].id}` : ""}` : locale === "en" ? "No external ticket linked" : "外部技術工單尚未建立" },
-    { kind: "resolved", label: tStatus("已解決", locale), meta: isResolved ? `${currentOwnerLabel} ${locale === "en" ? "marked resolved" : "標記完成"}` : "" },
-    { kind: "closed", label: tStatus("已結案", locale), meta: isClosed ? `${currentOwnerLabel} ${locale === "en" ? "closed the ticket" : "結案"}` : "" },
   ];
+
+  if (hasSecondLine) {
+    rows.push({
+      kind: "second-line",
+      label: locale === "en" ? "Second-line transfer" : "升級二線",
+      meta: secondLineActor ? `${frontlineLabel} → ${secondLineLabel}` : `${frontlineLabel} → ${locale === "en" ? "Second-line queue" : projectArea === "sea" ? "Second-line Queue" : "二線待處理 Queue"}`,
+    });
+  }
+
+  if (hasTech) {
+    rows.push({
+      kind: "engineering",
+      label: item.status === "技術排查中" ? tStatus("技術排查中", locale) : tStatus("待技術支援", locale),
+      meta: secondLineActor ? `${secondLineLabel} (${secondLineRoleLabel})${relatedTickets[0] ? ` · ${locale === "en" ? "Linked" : "已關聯"} ${relatedTickets[0].id}` : ""}` : locale === "en" ? "No external ticket linked" : "外部技術工單尚未建立",
+    });
+  }
+
+  rows.push(
+    { kind: "resolved", label: resolvedLabel, meta: isResolved ? `${resolvedActorLabel} ${locale === "en" ? "marked resolved" : "標記完成"}` : "" },
+    { kind: "closed", label: closedLabel, meta: isClosed ? `${closedActorLabel} ${locale === "en" ? "closed the ticket" : "結束案件"}` : "" },
+  );
+
+  const activeKind = item.status === "已結案" || item.status === "已關閉" || item.status === "已取消" ? "closed" :
+    item.status === "已解決" ? "resolved" :
+    hasTech ? "engineering" :
+    hasSecondLine ? "second-line" :
+    ["處理中", "待顧客回覆"].includes(item.status) ? "frontline" :
+    "created";
+  const currentIndex = Math.max(0, rows.findIndex((row) => row.kind === activeKind));
 
   return rows.map((row, index) => ({
     ...row,

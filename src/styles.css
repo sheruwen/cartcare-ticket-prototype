@@ -1163,6 +1163,43 @@ tbody tr:hover { background: #f6fbff; }
   background: #eef6ff;
 }
 
+.case-action-menu {
+  position: relative;
+}
+
+.case-close-reason-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 220px;
+  padding: 8px;
+  border: 1px solid #d9e5f5;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.16);
+}
+
+.case-close-reason-menu span {
+  padding: 6px 8px 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.case-action-chips .case-close-reason-menu button {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 10px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .ticket-titlebar h2 {
   margin: 0;
   font-size: 28px;
