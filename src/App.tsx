@@ -3047,6 +3047,7 @@ function getOwnershipFlowSteps(item: SupportCase, events: TimelineEvent[], relat
   const secondLineLabel = secondLineActor ? getDisplayAssigneeName(secondLineActor, projectArea) : "";
   const frontlineRoleLabel = getLocalizedRoleLabel("一線客服", locale, projectArea);
   const secondLineRoleLabel = getLocalizedRoleLabel("二線客服", locale, projectArea);
+  const isSecondLineProcessing = ownerRole === "二線客服" && item.status === "處理中";
   const hasSecondLine = ["待二線客服處理", "待技術支援", "技術排查中"].includes(item.status) ||
     ownerRole === "二線客服" ||
     events.some((event) => ["升級至二線客服", "二線處理結果", "二線分析完成"].includes(event.type));
@@ -3091,6 +3092,14 @@ function getOwnershipFlowSteps(item: SupportCase, events: TimelineEvent[], relat
     });
   }
 
+  if (isSecondLineProcessing) {
+    rows.push({
+      kind: "second-line-processing",
+      label: locale === "en" ? "Second-line in progress" : "二線處理中",
+      meta: `${secondLineLabel} (${secondLineRoleLabel})`,
+    });
+  }
+
   if (hasTech) {
     rows.push({
       kind: "engineering",
@@ -3106,6 +3115,7 @@ function getOwnershipFlowSteps(item: SupportCase, events: TimelineEvent[], relat
   const activeKind = isClosedWithoutResolution ? "closed" :
     item.status === "已解決" || item.status === "已結案" ? "resolved" :
     hasTech ? "engineering" :
+    isSecondLineProcessing ? "second-line-processing" :
     hasSecondLine ? "second-line" :
     ["處理中", "待顧客回覆"].includes(item.status) ? "frontline" :
     "created";
