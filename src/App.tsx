@@ -3021,13 +3021,13 @@ function CaseStatusFlow({ supportCase, events, relatedTickets, projectArea, loca
       <span className="status-flow-label">Progress Timeline</span>
       <div>
         {steps.map((step) => (
-          <div className={`status-step ${step.state} ${canEscalateSecondLine && step.kind === "second-line" ? "with-action" : ""}`} key={step.label}>
+          <div className={`status-step ${step.state} ${canEscalateSecondLine && step.action === "escalate" ? "with-action" : ""}`} key={step.label}>
             <span></span>
             <div>
               <strong>{step.label}</strong>
               {step.meta && <small>{step.meta}</small>}
             </div>
-            {canEscalateSecondLine && step.kind === "second-line" && onEscalateSecondLine && (
+            {canEscalateSecondLine && step.action === "escalate" && onEscalateSecondLine && (
               <button className="small-chip-button status-step-button" onClick={onEscalateSecondLine}>{locale === "en" ? "Transfer" : "移交二線客服"}</button>
             )}
           </div>
@@ -3053,6 +3053,7 @@ function getOwnershipFlowSteps(item: SupportCase, events: TimelineEvent[], relat
   const hasTech = relatedTickets.length > 0 || ["待技術支援", "技術排查中"].includes(item.status);
   const isResolved = ["已解決", "已結案"].includes(item.status);
   const isClosedWithoutResolution = ["已關閉", "已取消"].includes(item.status);
+  const canStillEscalateFromFrontline = !hasSecondLine && !hasTech && !isResolved && !isClosedWithoutResolution && ["處理中", "待顧客回覆"].includes(item.status);
   const resolvedActor = resolvedEvent?.actor ?? item.assignee;
   const closedActor = closedEvent?.actor ?? item.assignee;
   const resolvedActorLabel = getDisplayAssigneeName(resolvedActor, projectArea);
@@ -3072,9 +3073,14 @@ function getOwnershipFlowSteps(item: SupportCase, events: TimelineEvent[], relat
       meta: isResolved ? `${resolvedActorLabel} ${locale === "en" ? "marked resolved" : "標記完成"}` : "",
     };
 
-  const rows: Array<{ kind: string; label: string; meta: string }> = [
+  const rows: Array<{ kind: string; label: string; meta: string; action?: "escalate" }> = [
     { kind: "created", label: tStatus("新建立", locale), meta: locale === "en" ? `System created ticket · ${item.createdAt}` : `系統建立案件 · ${item.createdAt}` },
-    { kind: "frontline", label: item.status === "待顧客回覆" ? tStatus("待顧客回覆", locale) : tStatus("處理中", locale), meta: `${frontlineLabel} (${frontlineRoleLabel})` },
+    {
+      kind: "frontline",
+      label: item.status === "待顧客回覆" ? tStatus("待顧客回覆", locale) : tStatus("處理中", locale),
+      meta: `${frontlineLabel} (${frontlineRoleLabel})`,
+      action: canStillEscalateFromFrontline ? "escalate" : undefined,
+    },
   ];
 
   if (hasSecondLine) {
@@ -3093,7 +3099,9 @@ function getOwnershipFlowSteps(item: SupportCase, events: TimelineEvent[], relat
     });
   }
 
-  rows.push(terminalStep);
+  if (isResolved || isClosedWithoutResolution || hasSecondLine || hasTech) {
+    rows.push(terminalStep);
+  }
 
   const activeKind = isClosedWithoutResolution ? "closed" :
     item.status === "已解決" || item.status === "已結案" ? "resolved" :
